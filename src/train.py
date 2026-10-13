@@ -57,7 +57,7 @@ def train(cfg: Dict[str, Any], output_dir: Path, data_root: Path = Path("data"))
         torch.cuda.manual_seed_all(seed)
         torch.cuda.reset_peak_memory_stats()
 
-    print(f"\n==================== BẮT ĐẦU HUẤN LUYỆN {exp_name} ====================")
+    print(f"\n==================== BẮT ĐẦU HUẤN LUYỆN {exp_name} ====================", flush=True)
     print(f"Cấu hình: lr={lr}, batch_size={batch_size}, grad_accum={grad_accum}, max_steps={max_steps}")
     print(f"LoRA: r={lora_r}, alpha={lora_alpha}, dropout={lora_dropout} | Train Projector: {train_projector}")
 

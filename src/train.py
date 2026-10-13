@@ -112,7 +112,7 @@ def train(cfg: Dict[str, Any], output_dir: Path, data_root: Path = Path("data"))
 
     warmup_steps = int(0.05 * max_steps)
     scheduler = get_cosine_schedule_with_warmup(optimizer, warmup_steps, max_steps)
-    scaler = GradScaler("cuda")
+    scaler = GradScaler()
 
     # 5. Training Loop
     peft_model.train()
@@ -129,7 +129,7 @@ def train(cfg: Dict[str, Any], output_dir: Path, data_root: Path = Path("data"))
         for batch in dataloader:
             batch = {k: v.to(peft_model.device) for k, v in batch.items()}
 
-            with autocast(device_type="cuda", dtype=torch.float16):
+            with autocast(dtype=torch.float16):
                 outputs = peft_model(**batch)
                 loss = outputs.loss / grad_accum
 

@@ -150,8 +150,26 @@ def load_projector_weights(model: Any, checkpoint_dir: Path):
     state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
     with torch.no_grad():
         model_dict = dict(model.named_parameters())
+        matched = 0
         for name, tensor in state_dict.items():
-            if name in model_dict:
-                model_dict[name].copy_(tensor.to(device=model_dict[name].device, dtype=model_dict[name].dtype))
-    print(f"Đã nạp thành công {len(state_dict)} tensors projector từ {weights_path}")
-    return True
+            target_name = name
+            if target_name not in model_dict:
+                if target_name.startswith("base_model.model."):
+                    alt = target_name.replace("base_model.model.", "", 1)
+                    if alt in model_dict:
+                        target_name = alt
+                else:
+                    alt = "base_model.model." + target_name
+                    if alt in model_dict:
+                        target_name = alt
+
+            if target_name in model_dict:
+                model_dict[target_name].copy_(
+                    tensor.to(device=model_dict[target_name].device, dtype=model_dict[target_name].dtype)
+                )
+                matched += 1
+            else:
+                print(f"[CẢNH BÁO] Không tìm thấy parameter {name} trong model!")
+    print(f"Đã nạp thành công {matched}/{len(state_dict)} tensors projector từ {weights_path}")
+    return matched > 0
+

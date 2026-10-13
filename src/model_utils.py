@@ -88,6 +88,9 @@ def apply_setup(
     # 3. Mở projector cho E2, E3 (nếu train_projector=True)
     projector_param_count = 0
     if train_projector or setup_name in ("E2", "E3"):
+        for name, module in peft_model.named_modules():
+            if any(p in name for p in PROJECTOR_PARAM_PATTERNS):
+                module.to(dtype=torch.float32)
         for name, param in peft_model.named_parameters():
             if any(p in name for p in PROJECTOR_PARAM_PATTERNS):
                 param.data = param.data.to(dtype=torch.float32)

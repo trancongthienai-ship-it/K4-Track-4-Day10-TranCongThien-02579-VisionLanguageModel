@@ -141,6 +141,10 @@ def train(cfg: Dict[str, Any], output_dir: Path, data_root: Path = Path("data"))
             accum_count += 1
 
             if accum_count == grad_accum:
+                for p in trainable_params:
+                    if p.grad is not None and p.grad.dtype == torch.float16:
+                        p.grad.data = p.grad.data.float()
+
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(trainable_params, 1.0)
                 scaler.step(optimizer)

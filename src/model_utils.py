@@ -66,7 +66,25 @@ def apply_setup(
     # Cần cho gradient checkpointing
     model.enable_input_require_grads()
 
-    # 2. Xác định target modules theo regex
+    # 2. Mở projector cho E2, E3 TRƯỚC KHI áp dụng LoRA
+    projector_param_count = 0
+    if train_projector or setup_name in ("E2", "E3"):
+        for name, module in model.named_modules():
+            if any(p in name for p in PROJECTOR_PARAM_PATTERNS):
+                module.to(dtype=torch.float32)
+                for p_name, param in list(module._parameters.items()):
+                    if param is not None:
+                        module._parameters[p_name] = torch.nn.Parameter(
+                            param.data.to(dtype=torch.float32),
+                            requires_grad=True,
+                        )
+                        projector_param_count += param.numel()
+
+        for name, param in model.named_parameters():
+            if any(p in name for p in PROJECTOR_PARAM_PATTERNS):
+                param.requires_grad = True
+
+    # 3. Xác định target modules theo regex
     # LLM (36 layers * 7 modules = 252 modules)
     llm_pattern = r".*language_model.*layers\.\d+\.(self_attn\.(q|k|v|o)_proj|mlp\.(gate|up|down)_proj)"
     # ViT (24 blocks * 4 modules = 96 modules)
@@ -88,23 +106,10 @@ def apply_setup(
 
     peft_model = get_peft_model(model, lora_config)
 
-    # 3. Mở projector cho E2, E3 (nếu train_projector=True)
-    projector_param_count = 0
-    if train_projector or setup_name in ("E2", "E3"):
-        for mod_name, module in peft_model.named_modules():
-            if any(p in mod_name for p in PROJECTOR_PARAM_PATTERNS):
-                module.to(dtype=torch.float32)
-                for p_name, param in list(module._parameters.items()):
-                    if param is not None:
-                        module._parameters[p_name] = torch.nn.Parameter(
-                            param.data.to(dtype=torch.float32),
-                            requires_grad=True,
-                        )
-                        projector_param_count += param.numel()
-
-        for name, param in peft_model.named_parameters():
-            if any(p in name for p in PROJECTOR_PARAM_PATTERNS):
-                param.requires_grad = True
+    # Đảm bảo 100% tham số requires_grad đều ở float32
+    for name, param in peft_model.named_parameters():
+        if param.requires_grad and param.dtype != torch.float32:
+            param.data = param.data.to(dtype=torch.float32)
 
     # Đếm tham số huấn luyện
     trainable_params = sum(p.numel() for p in peft_model.parameters() if p.requires_grad)

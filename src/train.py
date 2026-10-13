@@ -118,7 +118,7 @@ def train(cfg: Dict[str, Any], output_dir: Path, data_root: Path = Path("data"))
     else:
         print(f"XÁC NHẬN: Toàn bộ {len(trainable_params)} tensor trainable đều ở float32!")
 
-    optimizer = AdamW(trainable_params, lr=lr, weight_decay=0.0)
+    optimizer = AdamW(trainable_params, lr=lr, weight_decay=0.0, foreach=False)
 
     warmup_steps = int(0.05 * max_steps)
     scheduler = get_cosine_schedule_with_warmup(optimizer, warmup_steps, max_steps)
@@ -151,6 +151,10 @@ def train(cfg: Dict[str, Any], output_dir: Path, data_root: Path = Path("data"))
             accum_count += 1
 
             if accum_count == grad_accum:
+                for p in trainable_params:
+                    if p.grad is not None and p.grad.dtype != torch.float32:
+                        p.grad = p.grad.float()
+
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(trainable_params, 1.0)
                 scaler.step(optimizer)

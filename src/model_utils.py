@@ -27,10 +27,13 @@ def get_quantization_config() -> BitsAndBytesConfig:
 
 def load_base_model_and_processor(
     model_id: str = "Qwen/Qwen3-VL-4B-Instruct",
-    device_map: str = "auto",
+    device_map: Any = None,
     is_train: bool = False,
 ) -> Tuple[Any, Any]:
     """Nạp base model lượng tử hoá 4-bit và processor."""
+    if device_map is None:
+        device_map = {"": 0} if torch.cuda.is_available() else "auto"
+
     quant_cfg = get_quantization_config()
     model = Qwen3VLForConditionalGeneration.from_pretrained(
         model_id,
@@ -88,14 +91,20 @@ def apply_setup(
     # 3. Mở projector cho E2, E3 (nếu train_projector=True)
     projector_param_count = 0
     if train_projector or setup_name in ("E2", "E3"):
-        for name, module in peft_model.named_modules():
-            if any(p in name for p in PROJECTOR_PARAM_PATTERNS):
+        for mod_name, module in peft_model.named_modules():
+            if any(p in mod_name for p in PROJECTOR_PARAM_PATTERNS):
                 module.to(dtype=torch.float32)
+                for p_name, param in list(module._parameters.items()):
+                    if param is not None:
+                        module._parameters[p_name] = torch.nn.Parameter(
+                            param.data.to(dtype=torch.float32),
+                            requires_grad=True,
+                        )
+                        projector_param_count += param.numel()
+
         for name, param in peft_model.named_parameters():
             if any(p in name for p in PROJECTOR_PARAM_PATTERNS):
-                param.data = param.data.to(dtype=torch.float32)
                 param.requires_grad = True
-                projector_param_count += param.numel()
 
     # Đếm tham số huấn luyện
     trainable_params = sum(p.numel() for p in peft_model.parameters() if p.requires_grad)

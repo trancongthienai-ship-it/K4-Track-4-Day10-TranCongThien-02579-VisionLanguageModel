@@ -107,7 +107,17 @@ def train(cfg: Dict[str, Any], output_dir: Path, data_root: Path = Path("data"))
     )
 
     # 4. Optimizer, Scheduler, Scaler
+    for name, p in peft_model.named_parameters():
+        if p.requires_grad and p.dtype != torch.float32:
+            p.data = p.data.to(torch.float32)
+
     trainable_params = [p for p in peft_model.parameters() if p.requires_grad]
+    non_float32 = [p.dtype for p in trainable_params if p.dtype != torch.float32]
+    if non_float32:
+        print(f"CẢNH BÁO: Còn tham số không phải float32: {non_float32}")
+    else:
+        print(f"XÁC NHẬN: Toàn bộ {len(trainable_params)} tensor trainable đều ở float32!")
+
     optimizer = AdamW(trainable_params, lr=lr, weight_decay=0.0)
 
     warmup_steps = int(0.05 * max_steps)
@@ -141,10 +151,6 @@ def train(cfg: Dict[str, Any], output_dir: Path, data_root: Path = Path("data"))
             accum_count += 1
 
             if accum_count == grad_accum:
-                for p in trainable_params:
-                    if p.grad is not None and p.grad.dtype == torch.float16:
-                        p.grad.data = p.grad.data.float()
-
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(trainable_params, 1.0)
                 scaler.step(optimizer)

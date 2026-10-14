@@ -94,14 +94,15 @@ Phạm vi cập nhật ở từng thí nghiệm:
   2. *Sự mơ hồ về ngữ nghĩa và số lượng False Positive:* Vân nứt trên bề mặt bê tông/nhựa đường rất dễ bị nhầm lẫn với vệt bóng cây, vạch kẻ đường mòn, mối nối nhựa đường hoặc vệt nước. Tại E1, số lượng dự đoán sai (FP) của `crack` lên tới 306 hộp (chiếm 78.6% tổng số FP của toàn mô hình).
   3. *Lớp `manhole` (nắp hố ga) đạt kết quả cao nhất (F1 = 0.492 ở E1):* Nắp hố ga có hình tròn hoặc chữ nhật cứng vững, kích thước tương đối cố định, viền kim loại/bê tông có độ tương phản quang học rõ rệt, giúp mô hình dễ dàng phát hiện chính xác.
 
-- **Minh họa 6 trường hợp dự đoán đại diện (tạo bởi `src/visualize.py`):**
-  - Quy ước màu sắc: **Xanh lá cây** = Ground Truth; **Xanh dương** = True Positive (IoU $\ge 0.5$, đúng lớp); **Đỏ** = False Positive (box bịa/lệch) hoặc False Negative (bỏ sót).
-  1. `pred_sample_1_success`: Nhận diện chuẩn xác `manhole` ở giữa làn đường (IoU = 0.78, box dự đoán xanh dương khít sát viền hố ga).
-  2. `pred_sample_2_success`: Phát hiện ổ gà `pothole` lớn cạnh lề đường (IoU = 0.72, đúng cả nhãn và vùng lõm).
-  3. `pred_sample_3_success`: Phát hiện vết nứt dài `crack` chạy dọc tim đường trong điều kiện đủ sáng (IoU = 0.58).
-  4. `pred_sample_4_error`: Báo động giả (False Positive) với nhãn `crack` tại vùng có bóng râm cành cây đổ xuống mặt đường loang lổ.
-  5. `pred_sample_5_error`: Bỏ sót (False Negative) các vết nứt chân chim rất nhỏ có bề rộng chỉ 2-3 pixel do visual encoder bị nén thông tin.
-  6. `pred_sample_6_error`: Nhầm lẫn phân lớp giữa một ổ gà chứa nước và nắp hố ga tròn bị chìm ngang mặt đường.
+- **Minh họa 6 trường hợp dự đoán đại diện (lưu tại `report/figures/`, tạo bởi `src/visualize.py`):**
+  - Quy ước màu sắc: **Xanh lá cây** = Ground Truth; **Xanh dương** = True Positive (IoU $\ge 0.5$, đúng lớp); **Đỏ** = False Positive (box bịa/lệch); **Cam** = False Negative (bỏ sót).
+  1. `pred_sample_1_success_vlcsnap-2025-02-18-23h13m55s630.jpg`: Phát hiện hoàn hảo cả 2 nắp hố ga `manhole` trên làn đường (GT: 2 manhole | Pred: 2 manhole; TP=2, FP=0, FN=0).
+  2. `pred_sample_2_success_vlcsnap-2025-02-18-23h13m56s767.jpg`: Phát hiện hoàn hảo cả 2 nắp hố ga `manhole` ở frame nối tiếp trong cùng hành trình (TP=2, FP=0, FN=0).
+  3. `pred_sample_3_success_vlcsnap-2025-02-18-23h14m03s217.jpg`: Phát hiện chuẩn xác 2 nắp cống `manhole` ở khoảng cách xa hơn mà không có bất kỳ báo động giả nào (TP=2, FP=0, FN=0).
+  4. `pred_sample_4_error_vlcsnap-2025-02-18-23h30m29s192.jpg`: Báo động giả nghiêm trọng với nhãn `crack` tại vùng đường nhựa có bóng cây đổ và vệt chắp vá mấp mô (GT: 4 pothole, 1 crack | Pred: 7 crack; TP=0, FP=7, FN=5).
+  5. `pred_sample_5_error_vlcsnap-2025-02-18-23h26m05s423.jpg`: Bỏ sót nắp hố ga chìm và dự đoán sai các vết nứt chân chim rất mảnh (GT: 2 manhole, 3 crack | Pred: 4 crack; TP=0, FP=4, FN=5).
+  6. `pred_sample_6_error_vlcsnap-2025-02-19-17h05m39s299.jpg`: Nhầm lẫn giữa ổ gà và nắp cống trong điều kiện ánh sáng góc xiên (GT: 2 manhole, 1 pothole, 2 crack | Pred: 4 pothole; TP=0, FP=4, FN=5).
+
 
 ### Câu 10 — E4: bạn đổi biến nào, kết quả thế nào, và kết luận có đáng tin không?
 - **Biến thay đổi:** Trục **Tỷ lệ dữ liệu huấn luyện (Training Data Fraction)**:

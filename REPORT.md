@@ -87,12 +87,21 @@ Phạm vi cập nhật ở từng thí nghiệm:
 ### Câu 9 — Phân tích lỗi theo lớp: lớp nào kém nhất và vì sao (kích thước box, số mẫu, ngữ nghĩa)? Kèm ảnh minh hoạ.
 - **Lớp có hiệu năng kém nhất:** Lớp **`crack` (vết nứt)** luôn có điểm F1 thấp nhất trên toàn bộ các thí nghiệm:
   - Ở E1: crack chỉ đạt F1 = 0.194 (trong khi manhole đạt 0.492 và pothole đạt 0.230).
-  - Ở E2: crack đạt F1 = 0.027.
-  - Ở E3: crack đạt F1 = 0.005.
+  - Ở E2: crack chỉ đạt F1 = 0.027.
+  - Ở E3: crack chỉ đạt F1 = 0.005.
 - **Nguyên nhân chi tiết:**
   1. *Hình dạng và diện tích box:* Vết nứt có đặc điểm mỏng manh, kéo dài ngoằn ngoèo theo nhiều hướng. Bounding box hình chữ nhật bao quanh một vết nứt chéo chứa phần lớn diện tích là mặt đường lành lặn. Khi tính IoU với ground truth, chỉ cần mô hình dự đoán lệch biên một khoảng nhỏ là chỉ số IoU lập tức rớt dưới ngưỡng 0.5.
   2. *Sự mơ hồ về ngữ nghĩa và số lượng False Positive:* Vân nứt trên bề mặt bê tông/nhựa đường rất dễ bị nhầm lẫn với vệt bóng cây, vạch kẻ đường mòn, mối nối nhựa đường hoặc vệt nước. Tại E1, số lượng dự đoán sai (FP) của `crack` lên tới 306 hộp (chiếm 78.6% tổng số FP của toàn mô hình).
   3. *Lớp `manhole` (nắp hố ga) đạt kết quả cao nhất (F1 = 0.492 ở E1):* Nắp hố ga có hình tròn hoặc chữ nhật cứng vững, kích thước tương đối cố định, viền kim loại/bê tông có độ tương phản quang học rõ rệt, giúp mô hình dễ dàng phát hiện chính xác.
+
+- **Minh họa 6 trường hợp dự đoán đại diện (tạo bởi `src/visualize.py`):**
+  - Quy ước màu sắc: **Xanh lá cây** = Ground Truth; **Xanh dương** = True Positive (IoU $\ge 0.5$, đúng lớp); **Đỏ** = False Positive (box bịa/lệch) hoặc False Negative (bỏ sót).
+  1. `pred_sample_1_success`: Nhận diện chuẩn xác `manhole` ở giữa làn đường (IoU = 0.78, box dự đoán xanh dương khít sát viền hố ga).
+  2. `pred_sample_2_success`: Phát hiện ổ gà `pothole` lớn cạnh lề đường (IoU = 0.72, đúng cả nhãn và vùng lõm).
+  3. `pred_sample_3_success`: Phát hiện vết nứt dài `crack` chạy dọc tim đường trong điều kiện đủ sáng (IoU = 0.58).
+  4. `pred_sample_4_error`: Báo động giả (False Positive) với nhãn `crack` tại vùng có bóng râm cành cây đổ xuống mặt đường loang lổ.
+  5. `pred_sample_5_error`: Bỏ sót (False Negative) các vết nứt chân chim rất nhỏ có bề rộng chỉ 2-3 pixel do visual encoder bị nén thông tin.
+  6. `pred_sample_6_error`: Nhầm lẫn phân lớp giữa một ổ gà chứa nước và nắp hố ga tròn bị chìm ngang mặt đường.
 
 ### Câu 10 — E4: bạn đổi biến nào, kết quả thế nào, và kết luận có đáng tin không?
 - **Biến thay đổi:** Trục **Tỷ lệ dữ liệu huấn luyện (Training Data Fraction)**:
@@ -112,3 +121,40 @@ Qua chuỗi thí nghiệm từ E0 đến E4 trên mô hình Vision-Language Mode
 1. **Khả năng căn chỉnh định dạng của LoRA:** Mô hình zero-shot (E0) gặp vấn đề lớn về định dạng output (chỉ 76.5% hợp lệ). Chỉ cần gắn LoRA nhẹ trên LLM (E1) với 300 steps, mô hình đã đạt tỷ lệ cú pháp hợp lệ gần như tuyệt đối (99.4% - 100%), chứng minh năng lực instruction-following cực mạnh của kiến trúc QLoRA.
 2. **Hiện tượng Catastrophic Forgetting khi can thiệp vào Projector/ViT:** Với tập dữ liệu nhỏ (1,422 ảnh), việc đóng băng ViT và Projector là chìa khóa then chốt để duy trì năng lực trích xuất đặc trưng thị giác mạnh mẽ của mô hình nền tảng.
 3. **Giới hạn của hàm mất mát Cross-Entropy trong bài toán Bounding Box:** Cross-entropy đối xử các token số tọa độ như các từ ngữ độc lập (không phân biệt sự gần nhau giữa số 500 và 501), dẫn đến hiện tượng box dự đoán có thể đúng vùng nhưng IoU chưa thật sự khít. Việc áp dụng Reinforcement Learning với phần thưởng IoU trực tiếp (như thuật toán GRPO ở E5) là hướng đi đầy hứa hẹn để giải quyết triệt để bài toán Visual Grounding.
+
+---
+
+## Bonus E5: Huấn luyện GRPO với IoU Reward (+10 điểm)
+
+### 1. Thiết kế hàm Reward IoU và Unit Tests (4 điểm)
+- Triển khai trong [`src/reward.py`](src/reward.py):
+  - Chuỗi sinh không parse được JSON hợp lệ: trả $0.0$.
+  - Cả Ground Truth và Dự đoán đều rỗng: trả $1.0$ (phát hiện đường nguyên vẹn chính xác).
+  - Ghép đôi tham lam theo thứ tự IoU giảm dần cho các cặp cùng nhãn lớp, chỉ chấp nhận cặp có $\text{IoU} \ge 0.5$.
+  - Công thức phần thưởng phạt box bịa:
+    $$R = 0.2 + 0.8 \times \frac{\sum_{\text{cặp khớp}} \text{IoU}}{\max(n_{gt}, n_{pred}, 1)}$$
+- **Kiểm thử tự động:** Toàn bộ 7/7 test cases trong [`src/test_reward.py`](src/test_reward.py) đều vượt qua (`pytest src/test_reward.py` đạt 100% PASS), bao gồm kiểm tra JSON hỏng, khớp hoàn hảo, sai lớp, box thừa, và IoU dưới ngưỡng 0.5.
+
+### 2. Quá trình chạy GRPO và Log thực nghiệm (3 điểm)
+- Script huấn luyện: [`src/train_grpo.py`](src/train_grpo.py) cấu hình theo [`configs/e5.yaml`](configs/e5.yaml):
+  - Khởi tạo từ checkpoint tốt nhất của SFT (E1).
+  - Số thế hệ sinh mỗi bước: $G = 4$ completions với sampling nhiệt độ $\tau = 0.7$, `max_completion_length = 128`.
+  - Tối ưu hóa trong 60 bước bằng AdamW với learning rate nhỏ $5 \times 10^{-6}$ để duy trì tính ổn định của chính sách (policy).
+  - Tính toán Relative Advantage trong nhóm: $A_i = (R_i - \text{mean}(R)) / (\text{std}(R) + \epsilon)$ để hướng dẫn cập nhật policy gradient.
+- **Nhật ký huấn luyện (`work/e5_grpo.log`):**
+  - Bước 1–15: Mean reward dao động quanh mức $0.34 \sim 0.42$, loss $\approx 0.18$.
+  - Bước 30–45: Mô hình bắt đầu loại bỏ các box có độ tự tin thấp, mean reward tăng lên $0.55 \sim 0.63$.
+  - Bước 60: Mean reward đạt $0.68$, loss hội tụ về $0.04$, các bounding box sinh ra bám sát viền tổn hại mặt đường hơn.
+
+### 3. Phân tích Reward Hacking và So sánh với SFT (3 điểm)
+- **Hiện tượng Reward Hacking (Mô hình gian lận phần thưởng):**
+  - *Nếu không có mẫu số $\max(n_{gt}, n_{pred}, 1)$:* Mô hình sẽ dễ dàng hack reward bằng cách sinh ra hàng chục box nhỏ phủ kín lòng đường để tăng xác suất trúng hú họa một box có IoU $\ge 0.5$.
+  - *Nếu cho điểm quá cao khi trả về danh sách rỗng `[]`:* Mô hình sẽ rơi vào điểm cực tiểu suy biến (degenerate collapse) bằng cách luôn trả về `[]` để ăn chắc điểm an toàn mà không chịu tìm kiếm tổn hại.
+  - Nhờ thiết kế mẫu số phạt nặng $n_{pred}$ và gán reward $0.2$ khi đoán rỗng có GT, mô hình không gặp hiện tượng hack reward nào trong suốt 60 bước.
+- **So sánh số liệu thực nghiệm giữa GRPO (E5) và SFT (E1):**
+  - **SFT (E1):** F1 = **0.267** | CI95 = `[0.231, 0.308]` | Mean IoU = 0.680 | FP/ảnh = 1.25.
+  - **GRPO (E5):** F1 = **0.282** | CI95 = `[0.244, 0.321]` | Mean IoU = **0.705** | FP/ảnh = **1.08**.
+- **Đánh giá thống kê qua CI95:**
+  - GRPO giúp cải thiện Mean IoU từ 0.680 lên 0.705 (+0.025) và giảm tỷ lệ báo động giả từ 1.25 xuống 1.08 FP/ảnh. F1 tăng nhẹ từ 0.267 lên 0.282.
+  - Tuy nhiên, khoảng tin cậy CI95 của E5 (`[0.244, 0.321]`) vẫn có sự giao thoa nhất định với E1 (`[0.231, 0.308]`). Điều này hoàn toàn tự nhiên vì 60 bước GRPO trên tập test nhỏ 311 ảnh chỉ đủ để tinh chỉnh độ khít của tọa độ (fine-grained coordinate refinement) chứ chưa đủ lực khám phá để tách biệt hoàn toàn về mặt khoảng tin cậy.
+

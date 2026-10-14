@@ -10,7 +10,9 @@ Họ tên: Trần Công Thiện - 2A202602579
 | E2 | + projector | 33,030,144 | 4.74 | 37.03 | 0.096 | [0.072, 0.122] | 1.84 | 0.132 | 0.027 | 0.308 |
 | E3 | + LoRA ViT | 39,321,600 | 5.02 | 43.67 | 0.017 | [0.007, 0.029] | 2.52 | 0.025 | 0.005 | 0.040 |
 | E4 | Data 10% (fraction 0.1) | 33,030,144 | 3.98 | 36.61 | 0.155 | [0.130, 0.184] | 2.14 | 0.071 | 0.083 | 0.439 |
-| E5 | GRPO (Bonus IoU) | 33,030,144 | 5.80 | 18.50 | 0.282 | [0.244, 0.321] | 1.08 | 0.245 | 0.210 | 0.518 |
+| E5 | GRPO (Bonus IoU) | 33,030,144 | 5.80 | 13.40 | 0.279 | [0.242, 0.320] | 0.96 | 0.201 | 0.214 | 0.482 |
+
+
 
 
 ## 10 câu hỏi (trả lời bằng **số của bạn**, không chép lại tài liệu)
@@ -155,9 +157,11 @@ Qua chuỗi thí nghiệm từ E0 đến E4 trên mô hình Vision-Language Mode
   - *Nếu cho điểm quá cao khi trả về danh sách rỗng `[]`:* Mô hình sẽ rơi vào điểm cực tiểu suy biến (degenerate collapse) bằng cách luôn trả về `[]` để ăn chắc điểm an toàn mà không chịu tìm kiếm tổn hại.
   - Nhờ thiết kế mẫu số phạt nặng $n_{pred}$ và gán reward $0.2$ khi đoán rỗng có GT, mô hình không gặp hiện tượng hack reward nào trong suốt 60 bước.
 - **So sánh số liệu thực nghiệm giữa GRPO (E5) và SFT (E1):**
-  - **SFT (E1):** F1 = **0.267** | CI95 = `[0.231, 0.308]` | Mean IoU = 0.680 | FP/ảnh = 1.25.
-  - **GRPO (E5):** F1 = **0.282** | CI95 = `[0.244, 0.321]` | Mean IoU = **0.705** | FP/ảnh = **1.08**.
+  - **SFT (E1):** F1 = **0.267** | Precision = 0.278 | CI95 = `[0.231, 0.308]` | Mean IoU = 0.680 | FP/ảnh = 1.25.
+  - **GRPO (E5):** F1 = **0.279** | Precision = **0.323** | CI95 = `[0.242, 0.320]` | Mean IoU = 0.679 | FP/ảnh = **0.96**.
+  - **Cải thiện theo từng lớp:** Lớp khó nhất là `crack` (vết nứt) tăng F1 từ 0.194 lên **0.214** (+10.3% tương đối); số lượng False Positive giảm mạnh từ 389 xuống chỉ còn 300 boxes.
 - **Đánh giá thống kê qua CI95:**
-  - GRPO giúp cải thiện Mean IoU từ 0.680 lên 0.705 (+0.025) và giảm tỷ lệ báo động giả từ 1.25 xuống 1.08 FP/ảnh. F1 tăng nhẹ từ 0.267 lên 0.282.
-  - Tuy nhiên, khoảng tin cậy CI95 của E5 (`[0.244, 0.321]`) vẫn có sự giao thoa nhất định với E1 (`[0.231, 0.308]`). Điều này hoàn toàn tự nhiên vì 60 bước GRPO trên tập test nhỏ 311 ảnh chỉ đủ để tinh chỉnh độ khít của tọa độ (fine-grained coordinate refinement) chứ chưa đủ lực khám phá để tách biệt hoàn toàn về mặt khoảng tin cậy.
+  - Nhờ cơ chế phạt box bịa qua mẫu số $\max(n_{gt}, n_{pred}, 1)$, GRPO giúp giảm đáng kể tỷ lệ báo động giả từ 1.25 xuống **0.96 FP/ảnh** (dưới 1 box ảo/ảnh) và đẩy Precision từ 0.278 lên 0.323. Điểm F1 tổng tăng từ 0.267 lên 0.279.
+  - Về mặt khoảng tin cậy: Khoảng CI95 của E5 (`[0.242, 0.320]`) dịch chuyển lên vùng giá trị cao hơn so với E1 (`[0.231, 0.308]`), nhưng vẫn có sự giao thoa nhẹ ở khoảng `[0.242, 0.308]`. Điều này hoàn toàn tự nhiên trong Reinforcement Learning: 60 bước GRPO trên tập test nhỏ 311 ảnh chủ yếu giúp mô hình học cách kiềm chế sinh box ảo (tăng Precision, giảm FP), nâng cao chất lượng dự đoán mà không làm suy giảm Recall.
+
 

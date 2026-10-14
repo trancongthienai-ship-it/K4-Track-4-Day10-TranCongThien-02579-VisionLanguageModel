@@ -6,21 +6,22 @@ from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.labcommon import read_jsonl
-from scripts.score import iou_xyxy, parse_output
+from scripts.score import _gt_boxes, iou_xyxy, parse_output
 
-COLOR_GT = "#00FF00"      # Xanh lá: Ground Truth
-COLOR_TP = "#00BFFF"      # Xanh dương: Dự đoán đúng (True Positive, IoU >= 0.5)
-COLOR_FP = "#FF3030"      # Đỏ: Dự đoán sai / thừa (False Positive)
+COLOR_GT = "#00FF00"         # Xanh lá: Ground Truth
+COLOR_TP = "#00BFFF"         # Xanh dương sáng: True Positive (Dự đoán đúng, IoU >= 0.5)
+COLOR_FP = "#FF3030"         # Đỏ: False Positive (Dự đoán sai / báo động giả)
+COLOR_FN = "#FFA500"         # Cam: False Negative (Bỏ sót Ground Truth)
 
 
 def denorm_bbox(bbox_1000, width, height):
     """Chuyển toạ độ 0-1000 sang toạ độ pixel [x1, y1, x2, y2]."""
     x1, y1, x2, y2 = bbox_1000
     return [
-        int(x1 * width / 1000.0),
-        int(y1 * height / 1000.0),
-        int(x2 * width / 1000.0),
-        int(y2 * height / 1000.0),
+        max(0, min(width - 1, int(x1 * width / 1000.0))),
+        max(0, min(height - 1, int(y1 * height / 1000.0))),
+        max(0, min(width - 1, int(x2 * width / 1000.0))),
+        max(0, min(height - 1, int(y2 * height / 1000.0))),
     ]
 
 
@@ -37,51 +38,74 @@ def visualize_predictions(
     test_entries = read_jsonl(data_root / "splits" / "test.jsonl")
     preds = {x["image_id"]: x["raw"] for x in read_jsonl(pred_path)}
 
-    print(f"Đang phân tích {len(test_entries)} ảnh test...")
+    print(f"Đang phân tích Ground Truth và Dự đoán trên {len(test_entries)} ảnh test...")
     analyzed = []
 
     for entry in test_entries:
         img_id = entry["image_id"]
         raw = preds.get(img_id, "[]")
         pred_boxes = parse_output(raw) or []
-        gt_boxes = entry.get("boxes", [])
+        gt_boxes = _gt_boxes(entry)  # Lấy đúng key 'objects' và chuyển sang norm1000
 
-        # Ghép đôi kiểm tra TP, FP
+        # Ghép đôi kiểm tra TP, FP, FN
         tp_count = 0
         fp_count = 0
-        fn_count = len(gt_boxes)
-
         used_gt = set()
-        for p in pred_boxes:
+        matched_preds = {}
+
+        for p_idx, p in enumerate(pred_boxes):
             p_label = p["label"]
             p_box = p["bbox"]
-            matched = False
-            for idx, g in enumerate(gt_boxes):
-                if idx in used_gt:
+            best_iou = 0.0
+            best_g_idx = -1
+
+            for g_idx, g in enumerate(gt_boxes):
+                if g_idx in used_gt:
                     continue
                 if g["label"] == p_label:
                     iou = iou_xyxy(p_box, g["bbox"])
-                    if iou >= 0.5:
-                        used_gt.add(idx)
-                        tp_count += 1
-                        matched = True
-                        break
-            if not matched:
+                    if iou >= 0.5 and iou > best_iou:
+                        best_iou = iou
+                        best_g_idx = g_idx
+
+            if best_g_idx >= 0:
+                used_gt.add(best_g_idx)
+                tp_count += 1
+                matched_preds[p_idx] = (True, best_iou)
+            else:
                 fp_count += 1
-        fn_count -= len(used_gt)
+                matched_preds[p_idx] = (False, 0.0)
+
+        fn_count = len(gt_boxes) - len(used_gt)
 
         analyzed.append({
             "entry": entry,
             "pred_boxes": pred_boxes,
             "gt_boxes": gt_boxes,
+            "matched_preds": matched_preds,
+            "used_gt": used_gt,
             "tp": tp_count,
             "fp": fp_count,
             "fn": fn_count,
         })
 
-    # Chọn 3 ca thành công (nhiều TP, ít FP/FN) và 3 ca thất bại (có FP hoặc FN)
-    success_cases = sorted(analyzed, key=lambda x: (x["tp"], -x["fp"]), reverse=True)[:3]
-    error_cases = sorted(analyzed, key=lambda x: (x["fp"] + x["fn"], -x["tp"]), reverse=True)[:3]
+    # Lọc chỉ xét các ảnh thật sự có hư hại trong Ground Truth
+    with_gt = [c for c in analyzed if len(c["gt_boxes"]) > 0]
+
+    # Chọn 3 ca thành công: có TP >= 1, ít FP nhất, F1 cao nhất
+    success_cases = sorted(
+        with_gt,
+        key=lambda x: (x["tp"], -x["fp"], -x["fn"]),
+        reverse=True
+    )[:3]
+
+    # Chọn 3 ca thất bại: có lỗi FP hoặc FN lớn nhất
+    error_cases = sorted(
+        with_gt,
+        key=lambda x: (x["fp"] + x["fn"], -x["tp"]),
+        reverse=True
+    )[:3]
+
     selected = [("success", c) for c in success_cases] + [("error", c) for c in error_cases]
 
     print(f"Bắt đầu vẽ {len(selected)} ảnh minh hoạ vào {output_dir}...")
@@ -104,45 +128,43 @@ def visualize_predictions(
         w, h = im.size
         draw = ImageDraw.Draw(im)
 
-        # 1. Vẽ Ground Truth (Xanh lá, viền nét đứt hoặc nét dày)
-        for g in item["gt_boxes"]:
+        # 1. Vẽ Ground Truth (Xanh lá)
+        for g_idx, g in enumerate(item["gt_boxes"]):
             box_px = denorm_bbox(g["bbox"], w, h)
-            draw.rectangle(box_px, outline=COLOR_GT, width=3)
-            draw.text((box_px[0], max(0, box_px[1] - 12)), f"GT: {g['label']}", fill=COLOR_GT, font=font)
+            is_detected = g_idx in item["used_gt"]
+            gt_tag = "GT" if is_detected else "GT (bỏ sót)"
+            gt_color = COLOR_GT if is_detected else COLOR_FN
+            draw.rectangle(box_px, outline=gt_color, width=3)
+            draw.text((box_px[0], max(0, box_px[1] - 13)), f"{gt_tag}: {g['label']}", fill=gt_color, font=font)
 
-        # 2. Vẽ Predictions
-        used_gt = set()
-        for p in item["pred_boxes"]:
+        # 2. Vẽ Predictions (Xanh dương = TP, Đỏ = FP)
+        for p_idx, p in enumerate(item["pred_boxes"]):
             p_label = p["label"]
             p_box = p["bbox"]
-            is_tp = False
-            for g_idx, g in enumerate(item["gt_boxes"]):
-                if g_idx not in used_gt and g["label"] == p_label:
-                    if iou_xyxy(p_box, g["bbox"]) >= 0.5:
-                        used_gt.add(g_idx)
-                        is_tp = True
-                        break
+            is_tp, iou_val = item["matched_preds"].get(p_idx, (False, 0.0))
 
             box_px = denorm_bbox(p_box, w, h)
             color = COLOR_TP if is_tp else COLOR_FP
-            tag = "TP" if is_tp else "FP"
+            tag = f"Pred TP (IoU={iou_val:.2f}): {p_label}" if is_tp else f"Pred FP: {p_label}"
             draw.rectangle(box_px, outline=color, width=2)
-            draw.text((box_px[0], min(h - 12, box_px[3] + 2)), f"Pred ({tag}): {p_label}", fill=color, font=font)
+            draw.text((box_px[0], min(h - 13, box_px[3] + 2)), tag, fill=color, font=font)
 
         out_name = f"pred_sample_{idx}_{case_type}_{entry['image_id']}.jpg"
         save_file = output_dir / out_name
-        im.save(save_file, quality=92)
+        im.save(save_file, quality=95)
+
+        gt_labels = [g["label"] for g in item["gt_boxes"]]
+        pred_labels = [p["label"] for p in item["pred_boxes"]]
         desc = (
             f"Ảnh {idx} (`{out_name}`): {case_type.upper()} | "
-            f"GT: {[g['label'] for g in item['gt_boxes']]} | "
-            f"Pred: {[p['label'] for p in item['pred_boxes']]} (TP={item['tp']}, FP={item['fp']}, FN={item['fn']})"
+            f"GT: {gt_labels} | Pred: {pred_labels} (TP={item['tp']}, FP={item['fp']}, FN={item['fn']})"
         )
         results_info.append(desc)
-        print(f" -> Đã lưu: {save_file}")
+        print(f" -> Đã lưu: {save_file} [{desc}]")
 
     info_txt = output_dir / "samples_info.txt"
     info_txt.write_text("\n".join(results_info), encoding="utf-8")
-    print(f"Hoàn thành! Đã lưu thông tin tại {info_txt}")
+    print(f"\nHoàn thành! Đã lưu thông tin chi tiết tại {info_txt}")
 
 
 if __name__ == "__main__":

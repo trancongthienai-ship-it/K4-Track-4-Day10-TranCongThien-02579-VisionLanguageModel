@@ -92,19 +92,23 @@ def visualize_predictions(
     # Lọc chỉ xét các ảnh thật sự có hư hại trong Ground Truth
     with_gt = [c for c in analyzed if len(c["gt_boxes"]) > 0]
 
-    # Chọn 3 ca thành công: có TP >= 1, ít FP nhất, F1 cao nhất
-    success_cases = sorted(
-        with_gt,
-        key=lambda x: (x["tp"], -x["fp"], -x["fn"]),
-        reverse=True
-    )[:3]
+    # Chọn 3 ca thành công HOÀN HẢO: TP >= 1, FP == 0, FN == 0 (hoặc ít FN nhất)
+    # Tìm các ca hoàn hảo 100% (không có bất kỳ box thừa hay box bỏ sót nào)
+    perfect_cases = [c for c in with_gt if c["tp"] >= 1 and c["fp"] == 0 and c["fn"] == 0]
+    perfect_cases.sort(key=lambda x: x["tp"], reverse=True)
 
-    # Chọn 3 ca thất bại: có lỗi FP hoặc FN lớn nhất
-    error_cases = sorted(
-        with_gt,
-        key=lambda x: (x["fp"] + x["fn"], -x["tp"]),
-        reverse=True
-    )[:3]
+    if len(perfect_cases) >= 3:
+        success_cases = perfect_cases[:3]
+    else:
+        # Nếu chưa đủ 3 ca hoàn hảo tuyệt đối, lấy thêm các ca có FP == 0 và FN nhỏ nhất
+        fallback = [c for c in with_gt if c not in perfect_cases and c["tp"] >= 1 and c["fp"] == 0]
+        fallback.sort(key=lambda x: (x["tp"], -x["fn"]), reverse=True)
+        success_cases = (perfect_cases + fallback)[:3]
+
+    # Chọn 3 ca thất bại: có lỗi FP hoặc FN rõ rệt nhất để phục vụ phân tích lỗi
+    error_candidates = [c for c in with_gt if (c["fp"] > 0 or c["fn"] > 0) and c not in success_cases]
+    error_candidates.sort(key=lambda x: (x["fp"] + x["fn"], x["fp"]), reverse=True)
+    error_cases = error_candidates[:3]
 
     selected = [("success", c) for c in success_cases] + [("error", c) for c in error_cases]
 
@@ -114,6 +118,7 @@ def visualize_predictions(
         font = ImageFont.load_default()
     except Exception:
         pass
+
 
     results_info = []
 

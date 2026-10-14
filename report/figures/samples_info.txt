@@ -1,0 +1,6 @@
+Ảnh 1 (`pred_sample_1_success_vlcsnap-2025-02-18-23h08m20s084.jpg`): SUCCESS | GT: [] | Pred: [] (TP=0, FP=0, FN=0)
+Ảnh 2 (`pred_sample_2_success_vlcsnap-2025-02-18-23h10m39s932.jpg`): SUCCESS | GT: [] | Pred: [] (TP=0, FP=0, FN=0)
+Ảnh 3 (`pred_sample_3_success_vlcsnap-00201.jpg`): SUCCESS | GT: [] | Pred: ['crack'] (TP=0, FP=1, FN=0)
+Ảnh 4 (`pred_sample_4_error_vlcsnap-2025-02-18-23h30m29s192.jpg`): ERROR | GT: [] | Pred: ['crack', 'crack', 'crack', 'crack', 'crack', 'crack', 'crack'] (TP=0, FP=7, FN=0)
+Ảnh 5 (`pred_sample_5_error_vlcsnap-2025-02-18-23h24m47s512.jpg`): ERROR | GT: [] | Pred: ['crack', 'pothole', 'pothole', 'pothole', 'pothole', 'pothole'] (TP=0, FP=6, FN=0)
+Ảnh 6 (`pred_sample_6_error_vlcsnap-2025-02-19-17h03m29s526.jpg`): ERROR | GT: [] | Pred: ['pothole', 'pothole', 'pothole', 'pothole', 'pothole', 'pothole'] (TP=0, FP=6, FN=0)

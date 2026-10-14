@@ -14,9 +14,11 @@ from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.labcommon import read_jsonl
+from src.dataset import DataCollatorForQwenVL, encode_example
 from src.label_utils import PROMPT_NORM1000
 from src.model_utils import load_base_model_and_processor
 from src.reward import compute_iou_reward
+
 
 
 def train_grpo(cfg: Dict[str, Any], output_dir: Path, data_root: Path):
@@ -141,41 +143,36 @@ def train_grpo(cfg: Dict[str, Any], output_dir: Path, data_root: Path):
         else:
             advantages = rewards_tensor - mean_r
 
-        # 3. Tính Policy Gradient Loss cho nhóm
+        # 3. Tính Policy Gradient Loss cho nhóm bằng DataCollator chuẩn
         model.train()
         optimizer.zero_grad()
 
-        # Nhân bản inputs để tính log-likelihood cho G câu trả lời
-        expanded_input_ids = gen_outputs
-        attention_mask = (expanded_input_ids != processor.tokenizer.pad_token_id).long()
-        pixel_values = inputs.get("pixel_values")
-        if pixel_values is not None:
-            expanded_pixel_values = pixel_values.repeat(num_generations, 1, 1, 1)
-        else:
-            expanded_pixel_values = None
+        encoded_candidates = [
+            encode_example(processor, image, prompt, c)
+            for c in decoded_texts
+        ]
+        collator = DataCollatorForQwenVL(pad_token_id=processor.tokenizer.pad_token_id)
+        batch = collator(encoded_candidates)
+        batch = {k: v.to(model.device) for k, v in batch.items()}
 
-        model_kwargs = {"input_ids": expanded_input_ids, "attention_mask": attention_mask}
-        if expanded_pixel_values is not None:
-            model_kwargs["pixel_values"] = expanded_pixel_values
-        if "image_grid_thw" in inputs:
-            model_kwargs["image_grid_thw"] = inputs["image_grid_thw"].repeat(num_generations, 1)
-
-        outputs = model(**model_kwargs)
-        logits = outputs.logits[:, prompt_len - 1 : -1, :]
-        targets = expanded_input_ids[:, prompt_len:]
+        outputs = model(**batch)
+        logits = outputs.logits[:, :-1, :]
+        targets = batch["labels"][:, 1:]
+        mask = (targets != -100)
 
         # Token-level log-probabilities
         log_probs = torch.log_softmax(logits, dim=-1)
-        token_log_probs = torch.gather(log_probs, -1, targets.unsqueeze(-1)).squeeze(-1)
-        seq_log_probs = token_log_probs.mean(dim=-1)
+        token_log_probs = torch.gather(log_probs, -1, targets.clamp(min=0).unsqueeze(-1)).squeeze(-1)
+        seq_log_probs = (token_log_probs * mask).sum(dim=-1) / (mask.sum(dim=-1) + 1e-8)
 
-        # Objective: - advantage * seq_log_prob
+        # GRPO Objective: - advantage * seq_log_prob
         loss = -(advantages.detach() * seq_log_probs).mean()
 
         if torch.isfinite(loss):
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], 1.0)
             optimizer.step()
+
 
         log_entry = {
             "step": step,
